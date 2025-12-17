@@ -1,143 +1,136 @@
 # multi_robot/multi_robot_visualization.py
+"""
+Visualization module for multi-robot comparison.
+Creates a GIF animation showing A* and D* Lite paths with a moving secondary robot as dynamic obstacle.
+"""
+
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-from matplotlib.lines import Line2D
 from PIL import Image
 import io
 import os
+from typing import List, Tuple, Dict
 
-def create_multi_robot_animation(map_grid, a_result, d_result, secondary_path, filename):
-    if not a_result.get('success', False) and not d_result.get('success', False):
-        print("⚠️ No successful results to visualize")
-        return
+
+def get_5x5_cells(pos: Tuple[int, int]) -> List[Tuple[int, int]]:
+    """Return all grid cells occupied by a 5x5 robot centered at pos."""
+    if pos is None:
+        return []
+    x, y = pos
+    return [(x + dx, y + dy) for dy in range(-2, 3) for dx in range(-2, 3)]
+
+
+def create_multi_robot_animation(
+    map_grid: np.ndarray,
+    a_result: Dict,
+    d_result: Dict,
+    secondary_path: List[Tuple[int, int]],
+    filename: str
+):
+    """
+    Create a GIF animation comparing A* and D* Lite in a dynamic environment
+    with a moving secondary robot.
     
-    max_steps_a = len(a_result['path']) if a_result.get('success') else 0
-    max_steps_d = len(d_result['path']) if d_result.get('success') else 0
-    max_secondary_steps = len(secondary_path)
-    total_frames = max(max_steps_a, max_steps_d, max_secondary_steps) + 10
-
-    if total_frames <= 10:
-        print("⚠️ Not enough path data to create a meaningful animation.")
+    Args:
+        map_grid: The environment map.
+        a_result: Result dictionary from A* simulation.
+        d_result: Result dictionary from D* Lite simulation.
+        secondary_path: List of positions of the secondary (moving obstacle) robot.
+        filename: Output GIF file path.
+    """
+    if not a_result.get('success', False) and not d_result.get('success', False):
+        print("No successful results to visualize")
         return
+
+    max_frames = max(
+        len(a_result.get('path', [])),
+        len(d_result.get('path', [])),
+        len(secondary_path)
+    ) + 10
 
     height, width = map_grid.shape
     frames = []
 
-    algo_colors = {
-        'A*': {'path': 'gold', 'point': 'orange', 'robot': 'orange', 'vision': 'orange'},
-        'D* Lite': {'path': 'deepskyblue', 'point': 'cyan', 'robot': 'cyan', 'vision': 'cyan'}
+    start = a_result.get('start') or d_result.get('start')
+    goal = a_result.get('goal') or d_result.get('goal')
+    vision_radius = a_result.get('vision_radius', 10)
+
+    colors = {
+        'A*': {'robot': 'orange', 'vision': 'orange', 'path': 'gold'},
+        'D* Lite': {'robot': 'cyan', 'vision': 'deepskyblue', 'path': 'deepskyblue'}
     }
 
-    def get_5x5_cells(pos):
-        if pos is None:
-            return []
-        x, y = pos
-        cells = []
-        for dy in range(-2, 3):
-            for dx in range(-2, 3):
-                cells.append((x + dx, y + dy))
-        return cells
+    for frame in range(max_frames):
+        fig, axes = plt.subplots(1, 2, figsize=(18, 9))
 
-    start_pos = a_result.get('start') or d_result.get('start')
-    goal_pos = a_result.get('goal') or d_result.get('goal')
-    vision_radius = a_result.get('vision_radius', 12)
+        for ax, algo_name, result in zip(axes, ['A*', 'D* Lite'], [a_result, d_result]):
+            ax.imshow(map_grid, cmap='gray_r', alpha=0.6, origin='upper')
 
-    for frame_idx in range(total_frames):
-        fig, axes = plt.subplots(1, 2, figsize=(16, 8))
-        
-        for ax_idx, (ax, algorithm, result) in enumerate(zip(axes, ['A*', 'D* Lite'], [a_result, d_result])):
-            ax.imshow(map_grid, cmap='gray_r', vmin=0, vmax=1, alpha=0.6)
-            
-            # Draw Start (Green)
-            if start_pos:
-                start_cells = get_5x5_cells(start_pos)
-                for x, y in start_cells:
-                    rect = patches.Rectangle((x-0.5, y-0.5), 1, 1,
-                                           facecolor='lightgreen', edgecolor='green',
-                                           alpha=0.7, linewidth=2)
-                    ax.add_patch(rect)
-                ax.plot(start_pos[0], start_pos[1], 'go', markersize=12, 
-                        markerfacecolor='green', markeredgecolor='darkgreen', markeredgewidth=2)
+            # Start position
+            if start:
+                for cell in get_5x5_cells(start):
+                    ax.add_patch(patches.Rectangle((cell[0] - 0.5, cell[1] - 0.5), 1, 1,
+                                                   facecolor='lightgreen', edgecolor='green', alpha=0.7))
+                ax.plot(start[0], start[1], 'o', color='green', markersize=12)
 
-            # Draw Goal (Red)
-            if goal_pos:
-                goal_cells = get_5x5_cells(goal_pos)
-                for x, y in goal_cells:
-                    rect = patches.Rectangle((x-0.5, y-0.5), 1, 1,
-                                           facecolor='lightcoral', edgecolor='red',
-                                           alpha=0.7, linewidth=2)
-                    ax.add_patch(rect)
-                ax.plot(goal_pos[0], goal_pos[1], 'ro', markersize=12,
-                        markerfacecolor='red', markeredgecolor='darkred', markeredgewidth=2)
+            # Goal position
+            if goal:
+                for cell in get_5x5_cells(goal):
+                    ax.add_patch(patches.Rectangle((cell[0] - 0.5, cell[1] - 0.5), 1, 1,
+                                                   facecolor='lightcoral', edgecolor='red', alpha=0.7))
+                ax.plot(goal[0], goal[1], 'o', color='red', markersize=12)
 
-            # Draw Secondary Robot (Pink)
-            if frame_idx < len(secondary_path):
-                sec_pos = secondary_path[frame_idx]
-                sec_cells = get_5x5_cells(sec_pos)
-                for x, y in sec_cells:
-                    rect = patches.Rectangle((x-0.5, y-0.5), 1, 1,
-                                           facecolor='lightpink', edgecolor='darkred',
-                                           alpha=0.8, linewidth=2)
-                    ax.add_patch(rect)
+            # Secondary (moving obstacle) robot
+            sec_idx = min(frame, len(secondary_path) - 1)
+            sec_pos = secondary_path[sec_idx]
+            for cell in get_5x5_cells(sec_pos):
+                ax.add_patch(patches.Rectangle((cell[0] - 0.5, cell[1] - 0.5), 1, 1,
+                                               facecolor='lightpink', edgecolor='magenta', alpha=0.9))
 
-            # Draw Primary Robot Path and Position
-            if result and result.get('success', False):
-                current_path_len = min(frame_idx + 1, len(result['path']))
-                if current_path_len > 0:
-                    path_points = result['path'][:current_path_len]
-                    path_x = [p[0] for p in path_points]
-                    path_y = [p[1] for p in path_points]
-                    
-                    ax.plot(path_x, path_y, '-', color=algo_colors[algorithm]['path'], linewidth=3, alpha=0.8)
-                    ax.plot(path_x, path_y, 'o', color=algo_colors[algorithm]['point'], markersize=5, alpha=0.6)
-                    
-                    current_pos = path_points[-1]
-                    robot_cells = get_5x5_cells(current_pos)
-                    for x, y in robot_cells:
-                        rect = patches.Rectangle((x-0.5, y-0.5), 1, 1,
-                                               facecolor='lightblue', edgecolor=algo_colors[algorithm]['robot'],
-                                               alpha=0.8, linewidth=2)
-                        ax.add_patch(rect)
-                    
-                    # Vision Circle
-                    vision_circle = patches.Circle(
-                        current_pos, vision_radius,
-                        fill=True, color=algo_colors[algorithm]['vision'], alpha=0.15
-                    )
-                    ax.add_patch(vision_circle)
-                    vision_outline = patches.Circle(
-                        current_pos, vision_radius,
-                        fill=False, color=algo_colors[algorithm]['vision'], linewidth=2, alpha=0.5
-                    )
-                    ax.add_patch(vision_outline)
+            # Primary robot path and current position
+            path = result.get('path', [])
+            if result.get('success', False) and frame < len(path):
+                path_so_far = path[:frame + 1]
+                xs, ys = zip(*path_so_far)
+                color = colors[algo_name]
+                ax.plot(xs, ys, '-', color=color['path'], linewidth=3, alpha=0.9)
 
-            ax.set_xlim(-1, width)
-            ax.set_ylim(height, -1)
+                current_pos = path_so_far[-1]
+                for cell in get_5x5_cells(current_pos):
+                    ax.add_patch(patches.Rectangle((cell[0] - 0.5, cell[1] - 0.5), 1, 1,
+                                                   facecolor='lightblue', edgecolor=color['robot'], alpha=0.8))
+
+                # Vision circle
+                ax.add_patch(patches.Circle(current_pos, vision_radius,
+                                            color=color['vision'], alpha=0.15, fill=True))
+                ax.add_patch(patches.Circle(current_pos, vision_radius,
+                                            color=color['vision'], alpha=0.5, fill=False, linewidth=2))
+
+            ax.set_xlim(0, width)
+            ax.set_ylim(height, 0)
             ax.set_aspect('equal')
-            success_status = "✅ Success" if result.get('success') else "❌ Failed"
-            ax.set_title(f"{algorithm} - {success_status}\nStep {min(frame_idx+1, len(result.get('path', [])))}", fontsize=12)
-            ax.set_xlabel("X")
-            ax.set_ylabel("Y")
-            ax.grid(True, alpha=0.3, linestyle='--')
+            status = 'Success' if result.get('success', False) else 'Failed'
+            ax.set_title(f"{algo_name} - {status} - Frame {frame}")
 
-        plt.suptitle("Multi-Robot Path Planning: A* vs D* Lite\n"
-                     "Primary Robot (Blue) | Moving Obstacle (Pink) | Vision Radius (Faint Circle)", 
-                     fontsize=14, fontweight='bold')
+        plt.suptitle("A* vs D* Lite: Dynamic Obstacle (Moving Robot)\n"
+                     "Vision radius = 10 cells", fontsize=16)
         plt.tight_layout()
 
         buf = io.BytesIO()
         plt.savefig(buf, format='png', dpi=100, bbox_inches='tight')
         buf.seek(0)
-        frame_img = Image.open(buf)
-        frames.append(frame_img)
-        plt.close()
+        frames.append(Image.open(buf))
+        plt.close(fig)
 
+    # Save animation
     if frames:
         os.makedirs(os.path.dirname(filename), exist_ok=True)
-        try:
-            frames[0].save(filename, save_all=True, append_images=frames[1:],
-                          duration=200, loop=0, optimize=True)
-            print(f"✅ Saved animation with vision circles: {filename}")
-        except Exception as e:
-            print(f"❌ Error saving animation: {e}")
+        frames[0].save(
+            filename,
+            save_all=True,
+            append_images=frames[1:],
+            duration=300,
+            loop=0
+        )
+        print(f"Animation saved: {filename}")

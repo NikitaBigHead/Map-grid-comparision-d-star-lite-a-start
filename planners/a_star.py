@@ -17,7 +17,7 @@ class AStarPlanner:
     A* — планирует "с нуля".
     В Arena/Robot мы заставляем его пересчитываться при столкновении.
     """
-    allow_diagonal: bool = False
+    allow_diagonal: bool = True
     _start: Point | None = None
     _goal: Point | None = None
     _occ: np.ndarray | None = None

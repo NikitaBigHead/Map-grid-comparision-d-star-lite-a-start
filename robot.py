@@ -71,7 +71,7 @@ class Robot:
                 if abs(x - cx) + abs(y - cy) <= R:
                     self.known_occ[y, x] = occ_cspace[y, x]
 
-        # --- выбираем, на какой карте планировать ---
+
         use_known = isinstance(self.planner, DStarLitePlanner)
         plan_occ = self.known_occ if use_known else occ_cspace
 

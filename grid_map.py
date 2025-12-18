@@ -19,7 +19,7 @@ class GridMap:
     Координаты: (x, y). Индексация в numpy: grid[y, x].
 
     Дополнительно:
-    - умеет выдавать случайный центр для робота размера size×size.
+    - выдаёт случайный ЦЕНТР робота, валидный для size×size и clearance.
     """
     grid: np.ndarray  # shape (H, W), dtype uint8
 
@@ -27,7 +27,6 @@ class GridMap:
         self.grid = self.grid.astype(np.uint8, copy=True)
         self.h, self.w = self.grid.shape
 
-        # prefix sum для быстрых запросов "есть ли obstacle в окне"
         ps = np.pad(self.grid.astype(np.int32), ((1, 0), (1, 0)), mode="constant")
         self._ps = ps.cumsum(0).cumsum(1)
 
@@ -49,21 +48,29 @@ class GridMap:
     def window_has_obstacle(self, x0: int, y0: int, x1: int, y1: int) -> bool:
         """
         Проверяет, есть ли obstacle (==1) в прямоугольнике [x0:x1, y0:y1] (x1,y1 НЕ включительно).
-        Требует, чтобы окно было в пределах карты.
+        Окно должно быть в пределах карты.
         """
         ps = self._ps
         s = ps[y1, x1] - ps[y0, x1] - ps[y1, x0] + ps[y0, x0]
         return s > 0
 
-    def center_valid_for_robot(self, center: Point, size: int) -> bool:
+    # -------------------------
+    # Clearance-aware API
+    # -------------------------
+    def center_valid_for_robot_with_clearance(self, center: Point, size: int, clearance: int) -> bool:
         """
-        Можно ли поставить робота size×size с центром center на статическую карту.
+        Можно ли поставить робота size×size с центром center, с запасом clearance (в клетках)
+        относительно препятствий и границ.
+
+        Проверка эквивалентна проверке квадрата effective_size = size + 2*clearance.
         """
-        if size <= 0:
+        if size <= 0 or clearance < 0:
             return False
 
+        effective_size = size + 2 * clearance
+
         cx, cy = center
-        hl, hr = _half_extents(size)
+        hl, hr = _half_extents(effective_size)
 
         x0 = cx - hl
         y0 = cy - hl
@@ -77,50 +84,53 @@ class GridMap:
         # и не пересекать препятствия
         return not self.window_has_obstacle(x0, y0, x1, y1)
 
-    def random_valid_center(self, size: int, rng: np.random.Generator | None = None) -> Point:
+    def random_valid_center_with_clearance(
+        self, size: int, clearance: int, rng: np.random.Generator | None = None
+    ) -> Point:
         """
-        Случайный центр, валидный для робота size×size по статической карте.
-        (не учитывает других роботов — только map obstacles)
+        Случайный центр, валидный для робота size×size с clearance относительно статических obstacles и границ.
         """
         rng = rng or np.random.default_rng()
 
-        hl, hr = _half_extents(size)
-        # допустимые центры по границам
+        if size <= 0 or clearance < 0:
+            raise ValueError("size must be > 0 and clearance must be >= 0")
+
+        effective_size = size + 2 * clearance
+        hl, hr = _half_extents(effective_size)
+
         xs = np.arange(hl, self.w - hr, dtype=int)
         ys = np.arange(hl, self.h - hr, dtype=int)
 
         if len(xs) == 0 or len(ys) == 0:
-            raise ValueError("Robot size is larger than the map.")
+            raise ValueError("Robot effective size is larger than the map.")
 
-        # пробуем случайно, но с защитой
         for _ in range(20000):
             cx = int(rng.choice(xs))
             cy = int(rng.choice(ys))
-            if self.center_valid_for_robot((cx, cy), size):
+            if self.center_valid_for_robot_with_clearance((cx, cy), size, clearance):
                 return (cx, cy)
 
-        # fallback: полный перебор (медленнее, но надёжно)
-        candidates = []
+        candidates: list[Point] = []
         for cy in ys:
             for cx in xs:
-                if self.center_valid_for_robot((int(cx), int(cy)), size):
-                    candidates.append((int(cx), int(cy)))
+                p = (int(cx), int(cy))
+                if self.center_valid_for_robot_with_clearance(p, size, clearance):
+                    candidates.append(p)
 
         if not candidates:
-            raise RuntimeError("No valid centers for this robot size on the given map.")
+            raise RuntimeError("No valid centers for this robot size+clearance on the given map.")
 
         return candidates[int(rng.integers(0, len(candidates)))]
 
-    def random_valid_center_not_equal(
-        self, size: int, not_this: Point, rng: np.random.Generator | None = None
+    def random_valid_center_not_equal_with_clearance(
+        self, size: int, clearance: int, not_this: Point, rng: np.random.Generator | None = None
     ) -> Point:
         rng = rng or np.random.default_rng()
         for _ in range(20000):
-            p = self.random_valid_center(size, rng)
+            p = self.random_valid_center_with_clearance(size, clearance, rng)
             if p != not_this:
                 return p
-        # если совсем плохо — добиваемся перебором
-        p = self.random_valid_center(size, rng)
+        p = self.random_valid_center_with_clearance(size, clearance, rng)
         if p == not_this:
             raise RuntimeError("Could not find a different valid center.")
         return p

@@ -4,8 +4,7 @@ import matplotlib.pyplot as plt
 
 
 class MapGenerator:
-    def __init__(self, width: int = 200, height: int = 200, seed = 21):
-        random.seed(seed)
+    def __init__(self, width: int = 200, height: int = 200):
         self.width = width
         self.height = height
         self.map = np.zeros((height, width), dtype=np.uint8)

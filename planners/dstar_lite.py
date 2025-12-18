@@ -4,12 +4,17 @@ from dataclasses import dataclass
 from typing import Dict, List, Tuple
 import numpy as np
 from .base import Plan, Point
+import math
 
 INF = float("inf")
 
 
 def manhattan(a: Point, b: Point) -> int:
     return abs(a[0] - b[0]) + abs(a[1] - b[1])
+
+
+def l2_dist(a: Point, b: Point) -> float:
+    return math.hypot(a[0] - b[0], a[1] - b[1])
 
 
 class _PQ:
@@ -93,7 +98,7 @@ class DStarLitePlanner:
 
         old_start = self._s_start
         self._s_start = current
-        self._km += manhattan(old_start, current)
+        self._km += l2_dist(old_start, current)
 
         # Находим изменения в среде (в т.ч. динамические obstacles от роботов)
         changes = np.argwhere(occ != self._occ)
@@ -133,7 +138,7 @@ class DStarLitePlanner:
         assert self._g is not None and self._rhs is not None and self._s_start is not None
         x, y = s
         g_rhs = min(self._g[y, x], self._rhs[y, x])
-        return (g_rhs + manhattan(self._s_start, s) + self._km, g_rhs)
+        return (g_rhs + l2_dist(self._s_start, s) + self._km, g_rhs)
 
     def _update_vertex(self, u: Point) -> None:
         assert self._rhs is not None and self._g is not None and self._U is not None

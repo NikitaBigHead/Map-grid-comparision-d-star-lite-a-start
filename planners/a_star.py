@@ -10,6 +10,8 @@ from .base import Plan, Point
 def manhattan(a: Point, b: Point) -> int:
     return abs(a[0] - b[0]) + abs(a[1] - b[1])
 
+def l2_dist(a: Point, b: Point) -> float:
+    return math.hypot(a[0] - b[0], a[1] - b[1])
 
 @dataclass
 class AStarPlanner:
@@ -17,7 +19,7 @@ class AStarPlanner:
     A* — планирует "с нуля".
     В Arena/Robot мы заставляем его пересчитываться при столкновении.
     """
-    allow_diagonal: bool = True
+    allow_diagonal: bool = False
     _start: Point | None = None
     _goal: Point | None = None
     _occ: np.ndarray | None = None
@@ -54,7 +56,7 @@ class AStarPlanner:
             return []
 
         openh: List[Tuple[float, float, Point]] = []
-        heapq.heappush(openh, (manhattan(start, goal), 0.0, start))
+        heapq.heappush(openh, (l2_dist(start, goal), 0.0, start))
 
         came: Dict[Point, Point] = {}
         g: Dict[Point, float] = {start: 0.0}
@@ -77,7 +79,7 @@ class AStarPlanner:
                 if ng < g.get(v, float("inf")):
                     g[v] = ng
                     came[v] = u
-                    f = ng + manhattan(v, goal)
+                    f = ng + l2_dist(v, goal)
                     heapq.heappush(openh, (f, ng, v))
 
         return []

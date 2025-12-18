@@ -98,6 +98,8 @@ class Arena:
     _goal_sc: Optional[object] = field(default=None, init=False)
     _txt: Optional[object] = field(default=None, init=False)
 
+    clearance: int = 1  
+
     def add_robot(self, robot: Robot) -> None:
         self.robots.append(robot)
 
@@ -105,10 +107,7 @@ class Arena:
         return self.map.grid
 
     def environment(self, for_robot: Robot | None = None) -> np.ndarray:
-        """
-        Возвращает occ в пространстве центров (c-space) для конкретного робота.
-        Роботы (кроме for_robot) — динамические obstacles квадратами.
-        """
+
         occ = self._static_occ().copy()
 
         for r in self.robots:
@@ -116,8 +115,8 @@ class Arena:
                 continue
             _stamp_square_center(occ, r.pos, r.size)
 
-        size = for_robot.size if for_robot is not None else 1
-        return _to_cspace_centers(occ, size)
+        eff_size = for_robot.size + 2 * self.clearance
+        return _to_cspace_centers(occ, eff_size)
 
     def step(self) -> None:
         for r in self.robots:
@@ -132,7 +131,7 @@ class Arena:
     def all_reached(self) -> bool:
         return all(r.at_goal() for r in self.robots)
 
-    # -------- GIF recording --------
+  
     def start_recording(
         self,
         gif_path: str = "sim.gif",

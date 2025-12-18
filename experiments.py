@@ -11,6 +11,9 @@ from grid_map import GridMap
 from arena import Arena
 from robot import Robot
 from planners import AStarPlanner, DStarLitePlanner
+import random 
+import numpy as np
+from tqdm import tqdm
 
 # === CONFIG ===
 os.makedirs("results", exist_ok=True)
@@ -19,10 +22,13 @@ robot_size = 5
 speed = 1
 max_steps = 1000
 frame_ms = 120
-exp_robot_counts = [1, 2, 3, 4, 5]
+exp_robot_counts = [3, 4, 5]
 clearance = 2
 vision_radius = 30
+seed = 52
 
+np.random.seed(seed)
+random.seed(seed)
 
 # === HELPERS ===
 def merge_frames_side_by_side(frames_left, frames_right):
@@ -131,7 +137,7 @@ for exp_idx, N in enumerate(exp_robot_counts, start=1):
     frames_astar = []
     steps_astar = 0
     start_time = time.perf_counter()
-    for step in range(max_steps):
+    for step in tqdm(range(max_steps)):
         if arena_astar.all_reached():
             steps_astar = step
             break

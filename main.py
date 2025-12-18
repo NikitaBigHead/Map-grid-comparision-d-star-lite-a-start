@@ -9,10 +9,10 @@ import matplotlib.cm as cm
 rng = np.random.default_rng(0)
 
 # --- общий размер для ВСЕХ роботов ---
-robot_size = 5  # <-- меняй тут
+robot_size = 10  # <-- меняй тут
 
 gen = MapGenerator(200, 200)
-grid = gen.generate_obstacles(0.80)
+grid = gen.generate_obstacles(0.3)
 gm = GridMap(grid)
 arena = Arena(map=gm)
 

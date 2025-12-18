@@ -1,66 +1,49 @@
-# import sys
-# import os
+from map_generator import MapGenerator
+from grid_map import GridMap
+from arena import Arena
+from robot import Robot
+from planners import DStarLitePlanner
+import numpy as np
+import matplotlib.cm as cm
 
-# # Добавляем корень проекта в путь
-# project_root = os.path.dirname(os.path.abspath(__file__))
-# sys.path.insert(0, project_root)
+rng = np.random.default_rng(0)
 
-# from test_runner import run_comparison_tests
-# from multi_robot.multi_robot_runner import run_multi_robot_comparison
+# --- общий размер для ВСЕХ роботов ---
+robot_size = 5  # <-- меняй тут
 
-# def main():
-#     # print("🤖 A* vs D* Lite ALGORITHM COMPARISON")
-#     # print("=" * 70)
-#     # print("Part 1: Static maps with limited visibility")
-#     # print("-" * 70)
-    
-#     # run_comparison_tests()
-    
-#     # print("\n" + "=" * 70)
-#     # print("Part 2: Dynamic environment with moving obstacle")
-#     # print("-" * 70)
-    
-#     run_multi_robot_comparison()
-    
-#     print("\n" + "=" * 70)
-#     print("✅ All tests completed!")
-#     print("Files saved in:")
-#     print("  • robot_visualizations_blind/ - Static map tests")
-#     print("  • multi_robot_visualizations/ - Dynamic obstacle test")
+gen = MapGenerator(200, 200)
+grid = gen.generate_obstacles(0.80)
+gm = GridMap(grid)
+arena = Arena(map=gm)
 
-# if __name__ == "__main__":
-#     main()
+N = 5
+cmap = cm.get_cmap("hsv", N)
 
-# Project/main.py
-import sys
-import os
+for i in range(N):
+    s = gm.random_valid_center(robot_size, rng)
+    g = gm.random_valid_center_not_equal(robot_size, s, rng)
 
-# Добавляем корень проекта в путь (на самом деле, это не обязательно, но не вредит)
-project_root = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, project_root)
+    color = cmap(i)[:3]  # RGB floats in [0,1]
 
-# from multi_robot.test_runner import run_comparison_tests  # Для статических тестов
-from multi_robot.multi_robot_runner import run_multi_robot_comparison
+    arena.add_robot(
+        Robot(
+            name=f"bot_{i}",
+            start=s,          # центр
+            goal=g,           # центр
+            speed=1,
+            planner=DStarLitePlanner(),
+            size=robot_size,  # одинаковый для всех
+            color_rgb=color,
+        )
+    )
 
-def main():
-    # print("🤖 A* vs D* Lite ALGORITHM COMPARISON")
-    # print("=" * 70)
-    # print("Part 1: Static maps with limited visibility")
-    # print("-" * 70)
-    
-    # run_comparison_tests()
-    
-    # print("\n" + "=" * 70)
-    # print("Part 2: Dynamic environment with moving obstacle")
-    # print("-" * 70)
-    
-    run_multi_robot_comparison()
-    
-    print("\n" + "=" * 70)
-    print("✅ All tests completed!")
-    print("Files saved in:")
-    print("  • robot_visualizations_blind/ - Static map tests")
-    print("  • multi_robot_visualizations/ - Dynamic obstacle test")
+arena.start_recording(gif_path="sim.gif", frame_ms=60, record_every=1)
+arena.record_frame()
 
-if __name__ == "__main__":
-    main()
+max_steps = 500
+for _ in range(max_steps):
+    if arena.all_reached():
+        break
+    arena.step()
+
+arena.stop_and_save_gif()

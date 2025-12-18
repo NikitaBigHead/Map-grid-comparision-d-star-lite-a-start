@@ -4,22 +4,13 @@ import matplotlib.pyplot as plt
 
 
 class MapGenerator:
-    def __init__(self, width: int = 200, height: int = 200):
-        """
-        Initialize the map generator
-        """
+    def __init__(self, width: int = 200, height: int = 200, seed = 21):
+        random.seed(seed)
         self.width = width
         self.height = height
         self.map = np.zeros((height, width), dtype=np.uint8)
 
-    def generate_obstacles(self, density: float = 0.3, seed: int = None) -> np.ndarray:
-        """
-        Generate obstacles on the map with optional seed
-        """
-        if seed is not None:
-            random.seed(seed)
-            np.random.seed(seed)
-            
+    def generate_obstacles(self, density: float = 0.3) -> np.ndarray:
         self.density = density
         self.map.fill(0)
 
@@ -31,14 +22,13 @@ class MapGenerator:
             obstacle_type = random.choice(['circle', 'rectangle'])
 
             if obstacle_type == 'circle':
-                radius = random.randint(5, 15)  # Smaller circles
+                radius = random.randint(5, 20)
                 center_x = random.randint(radius, self.width - radius - 1)
                 center_y = random.randint(radius, self.height - radius - 1)
                 added_cells = self._add_circle(center_x, center_y, radius)
-
-            else:  # rectangle
-                rect_width = random.randint(5, 30)  # Smaller rectangles
-                rect_height = random.randint(5, 30)
+            else:
+                rect_width = random.randint(5, 40)
+                rect_height = random.randint(5, 40)
                 x1 = random.randint(0, self.width - rect_width - 1)
                 y1 = random.randint(0, self.height - rect_height - 1)
                 x2 = x1 + rect_width
@@ -48,60 +38,10 @@ class MapGenerator:
             current_obstacle_cells += added_cells
 
             if current_obstacle_cells > target_obstacle_cells * 1.5:
+                print("Предупреждение: достигнут предел генерации препятствий")
                 break
 
         return self.map
-    
-    def generate_with_fixed_start_goal(self, density: float, start: tuple, goal: tuple, seed: int = None) -> np.ndarray:
-        """
-        Generate map with fixed start and goal positions
-        """
-        # Generate obstacles
-        map_grid = self.generate_obstacles(density, seed)
-        
-        # Ensure start and goal areas are clear (5×5 area)
-        robot_radius = 2
-        
-        # Clear area around start (9×9 area for safety)
-        for dy in range(-robot_radius-2, robot_radius+3):
-            for dx in range(-robot_radius-2, robot_radius+3):
-                x, y = start[0] + dx, start[1] + dy
-                if 0 <= x < self.width and 0 <= y < self.height:
-                    map_grid[y, x] = 0
-        
-        # Clear area around goal
-        for dy in range(-robot_radius-2, robot_radius+3):
-            for dx in range(-robot_radius-2, robot_radius+3):
-                x, y = goal[0] + dx, goal[1] + dy
-                if 0 <= x < self.width and 0 <= y < self.height:
-                    map_grid[y, x] = 0
-        
-        # Clear a wider corridor between start and goal
-        self._clear_path_corridor(map_grid, start, goal, width=3)
-        
-        return map_grid
-    
-    def _clear_path_corridor(self, map_grid: np.ndarray, start: tuple, goal: tuple, width: int = 3):
-        """Clear a corridor between start and goal for easier pathfinding."""
-        x1, y1 = start
-        x2, y2 = goal
-        
-        # Clear along a straight line with some width
-        steps = max(abs(x2 - x1), abs(y2 - y1))
-        if steps == 0:
-            return
-            
-        for i in range(steps + 1):
-            t = i / steps
-            x = int(x1 + (x2 - x1) * t)
-            y = int(y1 + (y2 - y1) * t)
-            
-            # Clear a square of width×width
-            for dy in range(-width, width + 1):
-                for dx in range(-width, width + 1):
-                    nx, ny = x + dx, y + dy
-                    if 0 <= nx < self.width and 0 <= ny < self.height:
-                        map_grid[ny, nx] = 0
 
     def _add_circle(self, center_x: int, center_y: int, radius: int) -> int:
         added_cells = 0
@@ -132,7 +72,7 @@ class MapGenerator:
             width=self.width,
             height=self.height
         )
-        print(f"Map saved to {filename}")
+        print(f"Карта сохранена в {filename}")
 
     def load_map(self, filename: str) -> np.ndarray:
         data = np.load(filename)
@@ -143,11 +83,44 @@ class MapGenerator:
 
     def visualize(self, title: str = ""):
         if title == "":
-            title = f"Obstacle map {int(self.density*100)}% (0=free, 1=obstacle)"
+            title = f"Карта препятствий {int(self.density*100)}% (0=свободно, 1=препятствие)"
 
         plt.figure(figsize=(10, 10))
         plt.imshow(self.map, cmap='gray_r', vmin=0, vmax=1)
         plt.title(title)
-        plt.xlabel("X coordinate")
-        plt.ylabel("Y coordinate")
+        plt.xlabel("X координата")
+        plt.ylabel("Y координата")
         plt.show()
+
+    def map_to_ascii(
+        self,
+        map_array: np.ndarray | None = None,
+        start: tuple[int, int] | None = None,
+        goal: tuple[int, int] | None = None,
+    ) -> str:
+        if map_array is None:
+            map_array = self.map
+
+        height, width = map_array.shape
+        grid = np.where(map_array == 1, '#', '.').astype('<U1')
+
+        def _check_point(p, name: str):
+            if p is None:
+                return
+            x, y = p
+            if not (0 <= x < width and 0 <= y < height):
+                raise ValueError(
+                    f"{name} вне карты: {(x, y)} при size=({width}, {height})"
+                )
+
+        _check_point(start, "start")
+        _check_point(goal, "goal")
+
+        if goal is not None:
+            gx, gy = goal
+            grid[gy, gx] = 'Z'
+        if start is not None:
+            sx, sy = start
+            grid[sy, sx] = 'A'
+
+        return "\n".join("".join(row) for row in grid)

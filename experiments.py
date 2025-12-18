@@ -20,6 +20,8 @@ speed = 1
 max_steps = 1000
 frame_ms = 120
 exp_robot_counts = [1, 2, 3, 4, 5]
+clearance = 2
+vision_radius = 30
 
 
 # === HELPERS ===
@@ -79,7 +81,7 @@ for exp_idx, N in enumerate(exp_robot_counts, start=1):
     grid = gen.generate_obstacles(0.25)
     gm = GridMap(grid)
 
-    starts = [gm.random_valid_center(robot_size, rng) for _ in range(N)]
+    starts = [gm.random_valid_center_with_clearance(robot_size, clearance, rng) for _ in range(N)]
 
     # ✅ ФУНКЦИЯ: генерация цели рядом с точкой
     def random_point_near(center, max_dist, rng):
@@ -88,9 +90,9 @@ for exp_idx, N in enumerate(exp_robot_counts, start=1):
             dx = int(rng.integers(-max_dist, max_dist + 1))
             dy = int(rng.integers(-max_dist, max_dist + 1))
             g = (cx + dx, cy + dy)
-            if gm.center_valid_for_robot(g, robot_size):
+            if gm.center_valid_for_robot_with_clearance(g, robot_size, clearance):
                 return g
-        return gm.random_valid_center_not_equal(robot_size, center, rng)
+        return gm.random_valid_center_not_equal_with_clearance(robot_size, clearance, center, rng)
 
     # ✅ ГЕНЕРАЦИЯ ЦЕЛЕЙ: рядом с партнёром
     goals = []
@@ -100,10 +102,10 @@ for exp_idx, N in enumerate(exp_robot_counts, start=1):
         elif i % 2 == 1:
             g = random_point_near(starts[i - 1], 15, rng)
         else:
-            g = gm.random_valid_center_not_equal(robot_size, starts[i], rng)
+            g = gm.random_valid_center_not_equal_with_clearance(robot_size,clearance, starts[i], rng)
 
         if g == starts[i]:
-            g = gm.random_valid_center_not_equal(robot_size, starts[i], rng)
+            g = gm.random_valid_center_not_equal_with_clearance(robot_size, clearance,  starts[i], rng)
         goals.append(g)
 
     # Цвета
@@ -115,11 +117,11 @@ for exp_idx, N in enumerate(exp_robot_counts, start=1):
     for i in range(N):
         robots_astar.append(Robot(
             name=f"R{i}", start=starts[i], goal=goals[i], speed=speed,
-            planner=AStarPlanner(), size=robot_size, color_rgb=colors[i]
+            planner=AStarPlanner(), size=robot_size, color_rgb=colors[i], vision_radius = vision_radius
         ))
         robots_dstar.append(Robot(
             name=f"R{i}", start=starts[i], goal=goals[i], speed=speed,
-            planner=DStarLitePlanner(), size=robot_size, color_rgb=colors[i]
+            planner=DStarLitePlanner(), size=robot_size, color_rgb=colors[i], vision_radius = vision_radius
         ))
 
     # === A* ===

@@ -122,6 +122,10 @@ class Arena:
         for r in self.robots:
             occ_cspace = self.environment(for_robot=r)
             r.tick(occ_cspace)
+            
+            if r.deadlocked:
+                print("r is blocked",r.deadlocked)
+                self.robots.remove(r)
 
         self.t += 1
 

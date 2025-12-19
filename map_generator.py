@@ -18,21 +18,22 @@ class MapGenerator:
         current_obstacle_cells = 0
 
         while current_obstacle_cells < target_obstacle_cells:
-            obstacle_type = random.choice(['circle', 'rectangle'])
+            # obstacle_type = random.choice(['circle', 'rectangle'])
 
-            if obstacle_type == 'circle':
-                radius = random.randint(5, 20)
-                center_x = random.randint(radius, self.width - radius - 1)
-                center_y = random.randint(radius, self.height - radius - 1)
-                added_cells = self._add_circle(center_x, center_y, radius)
-            else:
-                rect_width = random.randint(5, 40)
-                rect_height = random.randint(5, 40)
-                x1 = random.randint(0, self.width - rect_width - 1)
-                y1 = random.randint(0, self.height - rect_height - 1)
-                x2 = x1 + rect_width
-                y2 = y1 + rect_height
-                added_cells = self._add_rectangle(x1, y1, x2, y2)
+            # if obstacle_type == 'circle':
+            #     radius = random.randint(5, 20)
+            #     center_x = random.randint(radius, self.width - radius - 1)
+            #     center_y = random.randint(radius, self.height - radius - 1)
+            #     added_cells = self._add_circle(center_x, center_y, radius)
+            # else:
+            
+            rect_width = random.randint(5, 40)
+            rect_height = random.randint(5, 40)
+            x1 = random.randint(0, self.width - rect_width - 1)
+            y1 = random.randint(0, self.height - rect_height - 1)
+            x2 = x1 + rect_width
+            y2 = y1 + rect_height
+            added_cells = self._add_rectangle(x1, y1, x2, y2)
 
             current_obstacle_cells += added_cells
 

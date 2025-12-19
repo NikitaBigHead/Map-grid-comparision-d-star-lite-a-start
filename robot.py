@@ -17,9 +17,6 @@ def _half_extents(size: int) -> tuple[int, int]:
     hr = size - 1 - hl
     return hl, hr
 
-
-
-
 @dataclass
 class Robot:
     name: str
@@ -30,7 +27,7 @@ class Robot:
     size: int             # сторона квадрата в клетках
     color_rgb: RGB        # (r,g,b) в диапазоне 0..1
     vision_radius: int
-    deadlock_limit: int = 50  # сколько тиков подряд можно стоять до дедлока
+    deadlock_limit: int = 500  # сколько тиков подряд можно стоять до дедлока
 
     pos: Point = field(init=False)  # центр
     last_plan: Plan = field(default_factory=lambda: Plan(path=[], ok=False))
@@ -80,7 +77,7 @@ class Robot:
         return
 
     # ----------------- main tick -----------------
-    def tick(self, occ_cspace: np.ndarray) -> None:
+    def tick(self, occ_cspace: np.ndarray, static_cspace: np.ndarray) -> None:
         """
         occ_cspace — истинная карта в пространстве центров:
         1 = центр запрещён (квадрат size×size пересекает obstacle или выходит за границы)
@@ -100,15 +97,18 @@ class Robot:
         # --- known_occ обновляем всегда ---
         if self.known_occ is None:
             # неизвестное считаем свободным (оптимистично)
-            self.known_occ = np.zeros_like(occ_cspace, dtype=np.uint8)
+            self.known_occ = static_cspace.copy() #np.zeros_like(occ_cspace, dtype=np.uint8)
 
         cx, cy = self.pos
         R = self.vision_radius
 
+        plan_occ = self.known_occ.copy()   
+
         for y in range(max(0, cy - R), min(h, cy + R + 1)):
             for x in range(max(0, cx - R), min(w, cx + R + 1)):
-                if abs(x - cx) + abs(y - cy) <= R:
-                    self.known_occ[y, x] = occ_cspace[y, x]
+                if np.hypot(x - cx, y - cy) <= R:
+                    plan_occ[y, x] = occ_cspace[y, x] 
+                    # self.known_occ[y, x] = occ_cspace[y, x]
 
         use_dstar = isinstance(self.planner, DStarLitePlanner)
 
@@ -116,8 +116,7 @@ class Robot:
         # 1) D* Lite
         # ==========================
         if use_dstar:
-            plan_occ = self.known_occ
-
+            # plan_occ = self.known_occ
             if not self._initialized_planner:
                 self.planner.reset(self.pos, self.goal, plan_occ)
                 self._initialized_planner = True
@@ -132,13 +131,17 @@ class Robot:
                 self.last_plan = plan
 
                 if (not plan.ok) or (nxt == self.pos):
+   
                     return self._exit(start_pos)
 
                 # реальная коллизия по истинной карте
                 if occ_cspace[nxt[1], nxt[0]] == 1:
+
                     # робот "узнал" obstacle
-                    self.known_occ[nxt[1], nxt[0]] = 1
-                    self.planner.update(self.known_occ, self.pos)
+                    # self.known_occ[nxt[1], nxt[0]] = 1
+                    # self.planner.update(self.known_occ, self.pos)
+                    plan_occ[nxt[1], nxt[0]] = 1
+                    self.planner.update(plan_occ, self.pos)
                     return self._exit(start_pos)
 
                 self.pos = nxt
@@ -162,6 +165,7 @@ class Robot:
             self.last_plan = plan
 
             if (not plan.ok) or (nxt == self.pos):
+                self._a_star_occ = None
                 return self._exit(start_pos)
 
             # если столкнулись — считаем, что мир "изменился", и перепланируем на следующем тике

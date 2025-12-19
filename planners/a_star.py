@@ -46,8 +46,8 @@ class AStarPlanner:
 
     def _neighbors(self, u: Point):
         nbrs = [(1, 0), (-1, 0), (0, 1), (0, -1)]
-        if self.allow_diagonal:
-            nbrs += [(1, 1), (1, -1), (-1, 1), (-1, -1)]
+        # if self.allow_diagonal:
+        #     nbrs += [(1, 1), (1, -1), (-1, 1), (-1, -1)]
         for dx, dy in nbrs:
             yield (u[0] + dx, u[1] + dy), dx, dy
 

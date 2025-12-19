@@ -10,48 +10,8 @@ import argparse
 import random
 from datetime import datetime
 from tqdm import tqdm
+from utils import center_ok, sample_center_unique
 
-def bounds_from_center(center: tuple[int, int], eff_size: int) -> tuple[int, int, int, int]:
-    # bounds: [x0, x1), [y0, y1)
-    cx, cy = center
-    hl = eff_size // 2
-    hr = eff_size - 1 - hl
-    x0 = cx - hl
-    x1 = cx + hr + 1
-    y0 = cy - hl
-    y1 = cy + hr + 1
-    return x0, y0, x1, y1
-
-
-def rects_overlap(a: tuple[int, int, int, int], b: tuple[int, int, int, int]) -> bool:
-    ax0, ay0, ax1, ay1 = a
-    bx0, by0, bx1, by1 = b
-    return not (ax1 <= bx0 or bx1 <= ax0 or ay1 <= by0 or by1 <= ay0)
-
-
-def center_ok(center: tuple[int, int], eff_size: int, used_centers: list[tuple[int, int]]) -> bool:
-    ra = bounds_from_center(center, eff_size)
-    for c in used_centers:
-        rb = bounds_from_center(c, eff_size)
-        if rects_overlap(ra, rb):
-            return False
-    return True
-
-
-def sample_center_unique(
-    gm: GridMap,
-    size: int,
-    clearance: int,
-    rng: np.random.Generator,
-    used_centers: list[tuple[int, int]],
-    max_tries: int = 20000,
-) -> tuple[int, int]:
-    eff_size = size + 2 * clearance
-    for _ in range(max_tries):
-        p = gm.random_valid_center_with_clearance(size, clearance, rng)
-        if center_ok(p, eff_size, used_centers):
-            return p
-    raise RuntimeError("Could not sample non-overlapping center (try smaller N, smaller size/clearance, or lower density).")
 
 
 
@@ -89,6 +49,15 @@ def parse_args() -> argparse.Namespace:
     
     parser.add_argument("--clearance", type=int, default=2,
                     help="The clearance betweem robots and obstacles")
+    
+    parser.add_argument(
+        "--planner",
+        type=str,
+        choices=["dstar", "astar"],
+        default="dstar",
+        help="Planner type: dstar or astar",
+    )
+
 
     return parser.parse_args()
 
@@ -128,19 +97,29 @@ def main():
                 start=s,
                 goal=g,
                 speed=1,
-                planner=DStarLitePlanner(),
+                planner = DStarLitePlanner() if args.planner == "dstar" else AStarPlanner(),
                 size=args.robot_size,
                 color_rgb=color,
                 vision_radius=args.vision_radius,
             )
         )
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    gif_name = args.gif.replace(".gif", f"_{timestamp}.gif")
+    planner_tag = "DStarLite" if args.planner == "dstar" else "AStar"
+    obs_pct = int(round(args.obs_density * 100))
+
+    # base name без .gif
+    base = args.gif[:-4] if args.gif.lower().endswith(".gif") else args.gif
+
+    gif_name = f"{base}_{planner_tag}_N{args.n_robots}_OBS{obs_pct}_SEED{args.seed}_{timestamp}.gif"
+    title = f"{planner_tag} | N={args.n_robots} | obs={obs_pct}% | seed={args.seed}"
+
+
 
     arena.start_recording(
         gif_path=gif_name,
         frame_ms=args.frame_ms,
         record_every=1,
+        title = title
     )
 
     arena.record_frame()

@@ -14,18 +14,19 @@ from planners import AStarPlanner, DStarLitePlanner
 import random 
 import numpy as np
 from tqdm import tqdm
+from utils import sample_center_unique, center_ok
 
 # === CONFIG ===
 os.makedirs("results", exist_ok=True)
-rng = np.random.default_rng(42)
+rng = np.random.default_rng(52)
 robot_size = 5
 speed = 1
-max_steps = 1000
+max_steps = 2000
 frame_ms = 120
-exp_robot_counts = [1, 3, 4, 5]
+exp_robot_counts =  [1,2, 3,4,5]
 clearance = 2
-vision_radius = 30
-seed = 52
+vision_radius = 20
+seed = 3
 
 np.random.seed(seed)
 random.seed(seed)
@@ -56,63 +57,135 @@ def compute_path_length(history):
 def render_frame(grid, robots, history_list, title=""):
     fig, ax = plt.subplots(figsize=(5, 5))
     ax.imshow(grid, cmap="gray_r", origin="upper")
+
     for r, hist in zip(robots, history_list):
+        # --- 1) ПЛАН до цели (полупрозрачный) ---
+        if hasattr(r, "last_plan") and r.last_plan is not None and r.last_plan.ok:
+            path = r.last_plan.path
+            if path is not None and len(path) >= 2:
+                xs, ys = zip(*path)
+                ax.plot(
+                    xs, ys,
+                    "-",
+                    color=r.color_rgb,
+                    alpha=0.25,         
+                    linewidth=6.0,
+                    solid_capstyle="round",
+                    zorder=2,
+                )
+
+        # --- 2) ПРОЕХАННАЯ ТРАЕКТОРИЯ (непрозрачная) ---
         if len(hist) > 1:
             xs, ys = zip(*hist)
-            ax.plot(xs, ys, "-", color=r.color_rgb, linewidth=2.5)
-        ax.plot(r.pos[0], r.pos[1], 's', color=r.color_rgb, markersize=12,
-                markeredgecolor='black', markeredgewidth=1.0)
-        ax.plot(r.goal[0], r.goal[1], 'x', color=r.color_rgb, markersize=12,
-                markeredgewidth=3.0)
+            ax.plot(xs, ys, "-", color=r.color_rgb, linewidth=2.5, alpha=1.0, zorder=3)
+
+        # --- 3) ТЕКУЩАЯ ПОЗИЦИЯ робота ---
+        ax.plot(
+            r.pos[0], r.pos[1],
+            "s",
+            color=r.color_rgb,
+            markersize=12,
+            markeredgecolor="black",
+            markeredgewidth=1.0,
+            zorder=4,
+        )
+
+        # --- 4) GOAL ---
+        ax.plot(
+            r.goal[0], r.goal[1],
+            "x",
+            color=r.color_rgb,
+            markersize=12,
+            markeredgewidth=3.0,
+            zorder=5,
+        )
+
     ax.set_title(title, fontsize=12)
     ax.set_xlim(-0.5, grid.shape[1] - 0.5)
     ax.set_ylim(grid.shape[0] - 0.5, -0.5)
     ax.set_aspect("equal")
-    ax.axis('off')
+    ax.axis("off")
+
     fig.tight_layout(pad=0.1)
     canvas = fig.canvas
     canvas.draw()
     buf = canvas.buffer_rgba()
     w, h = canvas.get_width_height()
-    img = Image.frombuffer('RGBA', (w, h), buf, 'raw', 'RGBA', 0, 1).convert('RGB')
+    img = Image.frombuffer("RGBA", (w, h), buf, "raw", "RGBA", 0, 1).convert("RGB")
     plt.close(fig)
     return img
+
 
 
 # === MAIN LOOP ===
 for exp_idx, N in enumerate(exp_robot_counts, start=1):
     print(f"\n--- Experiment {exp_idx}: {N} robot(s) ---")
 
-    gen = MapGenerator(100, 100)
+    gen = MapGenerator(200, 200)
     grid = gen.generate_obstacles(0.25)
     gm = GridMap(grid)
+    
 
-    starts = [gm.random_valid_center_with_clearance(robot_size, clearance, rng) for _ in range(N)]
+        # =========================
+    # STARTS: уникальные, без пересечений
+    # =========================
+    used_starts: list[tuple[int, int]] = []
+    starts: list[tuple[int, int]] = []
 
-    # ✅ ФУНКЦИЯ: генерация цели рядом с точкой
-    def random_point_near(center, max_dist, rng):
-        cx, cy = center
-        for _ in range(1000):
+    for _ in range(N):
+        s = sample_center_unique(
+            gm,
+            size=robot_size,
+            clearance=clearance,
+            rng=rng,
+            used_centers=used_starts,
+        )
+        used_starts.append(s)
+        starts.append(s)
+
+    # =========================
+    # GOALS: уникальные, не на стартах, рядом с партнёром
+    # =========================
+    used_goals: list[tuple[int, int]] = []
+
+    def random_point_near_safe(center, max_dist, rng):
+
+        for _ in range(2000):
             dx = int(rng.integers(-max_dist, max_dist + 1))
             dy = int(rng.integers(-max_dist, max_dist + 1))
-            g = (cx + dx, cy + dy)
-            if gm.center_valid_for_robot_with_clearance(g, robot_size, clearance):
-                return g
-        return gm.random_valid_center_not_equal_with_clearance(robot_size, clearance, center, rng)
+            g = (center[0] + dx, center[1] + dy)
 
-    # ✅ ГЕНЕРАЦИЯ ЦЕЛЕЙ: рядом с партнёром
-    goals = []
+            if not gm.center_valid_for_robot_with_clearance(g, robot_size, clearance):
+                continue
+            if g in starts:
+                continue
+            if not center_ok(g, robot_size + 2 * clearance, used_goals):
+                continue
+
+            return g
+
+        # fallback
+        return sample_center_unique(
+            gm,
+            size=robot_size,
+            clearance=clearance,
+            rng=rng,
+            used_centers=used_goals + starts,
+        )
+
+    goals: list[tuple[int, int]] = []
+
     for i in range(N):
         if i % 2 == 0 and i + 1 < N:
-            g = random_point_near(starts[i + 1], 15, rng)
+            g = random_point_near_safe(starts[i + 1], 15, rng)
         elif i % 2 == 1:
-            g = random_point_near(starts[i - 1], 15, rng)
+            g = random_point_near_safe(starts[i - 1], 15, rng)
         else:
-            g = gm.random_valid_center_not_equal_with_clearance(robot_size,clearance, starts[i], rng)
+            g = random_point_near_safe(starts[i], 25, rng)
 
-        if g == starts[i]:
-            g = gm.random_valid_center_not_equal_with_clearance(robot_size, clearance,  starts[i], rng)
+        used_goals.append(g)
         goals.append(g)
+
 
     # Цвета
     colors = [plt.cm.tab10(i) for i in range(N)]
@@ -137,11 +210,12 @@ for exp_idx, N in enumerate(exp_robot_counts, start=1):
     frames_astar = []
     steps_astar = 0
     start_time = time.perf_counter()
-    for step in tqdm(range(max_steps)):
+    for i, step in tqdm(enumerate(range(max_steps)), disable = True):
         if arena_astar.all_reached():
             steps_astar = step
             break
         arena_astar.step()
+
         for i, r in enumerate(robots_astar):
             history_astar[i].append(r.pos)
         if step % 2 == 0:

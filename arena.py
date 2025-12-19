@@ -120,12 +120,17 @@ class Arena:
 
     def step(self) -> None:
         for r in self.robots:
-            occ_cspace = self.environment(for_robot=r)
-            r.tick(occ_cspace)
+            eff = r.size + 2 * self.clearance
+            static_cs = self.static_cspace(eff)
+            dyn_cs = self.environment(for_robot=r)  
+            r.tick(dyn_cs, static_cs)
+
+            # occ_cspace = self.environment(for_robot=r)
+            # r.tick(occ_cspace)
             
-            if r.deadlocked:
-                print("r is blocked",r.deadlocked)
-                self.robots.remove(r)
+            # if r.deadlocked:
+            #     print("r is blocked",r.deadlocked)
+            #     self.robots.remove(r)
 
         self.t += 1
 
@@ -135,6 +140,8 @@ class Arena:
     def all_reached(self) -> bool:
         return all(r.at_goal() for r in self.robots)
 
+    def static_cspace(self, eff_size: int) -> np.ndarray:
+        return _to_cspace_centers(self._static_occ(), eff_size)
   
     def start_recording(
         self,
@@ -143,6 +150,7 @@ class Arena:
         record_every: int = 1,
         figsize: tuple[float, float] = (8, 8),
         dpi: int = 120,
+        title: str = "Arena simulation"
     ) -> None:
         self._record = True
         self._frames.clear()
@@ -157,7 +165,7 @@ class Arena:
         canvas = FigureCanvas(fig)
         ax = fig.add_subplot(111)
 
-        ax.set_title("Arena simulation")
+        ax.set_title(title)
         ax.set_xlim(-0.5, w - 0.5)
         ax.set_ylim(h - 0.5, -0.5)
         ax.set_aspect("equal")

@@ -27,7 +27,7 @@ import json
 OUT_DIR = "results"
 os.makedirs(OUT_DIR, exist_ok=True)
 
-TASK_ROBOT_COUNTS = [1, 2] #, 2, 4, 8]
+TASK_ROBOT_COUNTS = [1, 2, 2, 4, 8]
 DENSITIES = [0.10, 0.20, 0.25]
 N_MAPS = 10  # 10 карт на плотность => 30 экспериментов на задачу
 
@@ -292,6 +292,93 @@ def aggregate_by_density(rows: List[Dict]) -> List[Dict]:
         ))
     return out
 
+def _atomic_write_text(path: str, text: str) -> None:
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(text)
+    os.replace(tmp, path)
+
+
+def _atomic_write_csv(path: str, rows: List[Dict]) -> None:
+    if not rows:
+        return
+    tmp = path + ".tmp"
+    with open(tmp, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+        w.writeheader()
+        w.writerows(rows)
+    os.replace(tmp, path)
+
+
+def save_all(
+    raw_rows: List[Dict],
+    scenarios: List[Dict],
+    map_cache: Dict[Tuple[float, int], GridMap],
+    sm: SeedManager,
+    interrupted: bool,
+) -> None:
+    os.makedirs(OUT_DIR, exist_ok=True)
+
+    suffix = "_partial" if interrupted else ""
+
+    # 1) raw
+    raw_path = os.path.join(OUT_DIR, f"raw_runs{suffix}.csv")
+    _atomic_write_csv(raw_path, raw_rows)
+    print("Saved:", raw_path)
+
+    # 2) summaries (если хоть что-то есть)
+    if raw_rows:
+        task_summary = aggregate_by_task(raw_rows)
+        task_path = os.path.join(OUT_DIR, f"summary_by_task{suffix}.csv")
+        _atomic_write_csv(task_path, task_summary)
+        print("Saved:", task_path)
+
+        dens_summary = aggregate_by_density(raw_rows)
+        dens_path = os.path.join(OUT_DIR, f"summary_by_density{suffix}.csv")
+        _atomic_write_csv(dens_path, dens_summary)
+        print("Saved:", dens_path)
+
+    # 3) scenarios
+    scenarios_path = os.path.join(OUT_DIR, f"scenarios{suffix}.json")
+    payload = dict(
+        meta=dict(
+            master_seed=int(MASTER_SEED),
+            map_size=int(MAP_SIZE),
+            robot_size=int(ROBOT_SIZE),
+            clearance=int(CLEARANCE),
+            vision_radius=int(VISION_RADIUS),
+            max_steps=int(MAX_STEPS),
+            densities=[float(d) for d in DENSITIES],
+            task_robot_counts=[int(n) for n in TASK_ROBOT_COUNTS],
+            n_maps=int(N_MAPS),
+            interrupted=bool(interrupted),
+            runs_completed=int(len(raw_rows) // 2),  # 2 алгоритма на exp
+        ),
+        scenarios=scenarios,
+    )
+    _atomic_write_text(scenarios_path, json.dumps(payload, ensure_ascii=False, indent=2))
+    print("Saved:", scenarios_path)
+
+    # 4) maps (только те, что реально есть в кэше)
+    maps_dir = os.path.join(OUT_DIR, f"maps_npz{suffix}")
+    os.makedirs(maps_dir, exist_ok=True)
+
+    for (density, map_idx), gm in map_cache.items():
+        ms = sm.map_seed(density, map_idx)
+        out_npz = os.path.join(
+            maps_dir,
+            f"map_d{int(round(density*100)):02d}_i{map_idx:02d}_seed{ms}.npz",
+        )
+        np.savez_compressed(
+            out_npz,
+            grid=gm.grid.astype(np.uint8),
+            density=float(density),
+            map_idx=int(map_idx),
+            map_seed=int(ms),
+        )
+
+    print("Saved maps to:", maps_dir)
+
 
 # =========================
 # Main
@@ -299,132 +386,77 @@ def aggregate_by_density(rows: List[Dict]) -> List[Dict]:
 def main():
     sm = SeedManager(MASTER_SEED)
     raw_rows: List[Dict] = []
-
-    # сохраняем все сценарии для полного воспроизведения
     scenarios: List[Dict] = []
-
-    # кэш карт, чтобы не генерировать их дважды внутри разных N
-    # ключ: (density, map_idx) -> GridMap
     map_cache: Dict[Tuple[float, int], GridMap] = {}
 
+    interrupted = False
     exp_id = 0
-    for n_robots in TASK_ROBOT_COUNTS:
-        for density in DENSITIES:
-            for map_idx in range(1, N_MAPS + 1):
-                exp_id += 1
 
-                # 1) карта — одинаковая между задачами
-                key = (float(density), int(map_idx))
-                if key not in map_cache:
-                    ms = sm.map_seed(density, map_idx)
-                    gm = generate_map(ms, density)
-                    map_cache[key] = gm
-                else:
-                    gm = map_cache[key]
-                    ms = sm.map_seed(density, map_idx)
+    try:
+        for n_robots in TASK_ROBOT_COUNTS:
+            for density in DENSITIES:
+                for map_idx in range(1, N_MAPS + 1):
+                    exp_id += 1
 
-                # 2) сценарий
-                ss = sm.scenario_seed(density, map_idx, n_robots)
-                rng = np.random.default_rng(ss)
-                starts, goals = sample_starts_goals(gm, n_robots, rng)
+                    # 1) карта — одинаковая между задачами
+                    key = (float(density), int(map_idx))
+                    if key not in map_cache:
+                        ms = sm.map_seed(density, map_idx)
+                        gm = generate_map(ms, density)
+                        map_cache[key] = gm
+                    else:
+                        gm = map_cache[key]
+                        ms = sm.map_seed(density, map_idx)
 
-                # 3) цвета одинаковые между алгоритмами в рамках эксперимента
-                cs = sm.colors_seed(density, map_idx, n_robots)
+                    # 2) сценарий
+                    ss = sm.scenario_seed(density, map_idx, n_robots)
+                    rng = np.random.default_rng(ss)
+                    starts, goals = sample_starts_goals(gm, n_robots, rng)
 
-                # --- сохранить сценарий ---
-                scenarios.append(dict(
-                    exp_id=exp_id,
-                    density=float(density),
-                    map_idx=int(map_idx),
-                    n_robots=int(n_robots),
-                    map_seed=int(ms),
-                    scenario_seed=int(ss),
-                    colors_seed=int(cs),
-                    starts=[list(p) for p in starts],
-                    goals=[list(p) for p in goals],
-                ))
+                    # 3) цвета
+                    cs = sm.colors_seed(density, map_idx, n_robots)
 
-                # --- прогон A* и D* ---
-                for algo_name, factory in [
-                    ("A*", lambda: AStarPlanner()),
-                    ("D*Lite", lambda: DStarLitePlanner()),
-                ]:
-                    res = run_one(algo_name, factory, gm, starts, goals, cs)
-                    res.update(dict(
+                    scenarios.append(dict(
                         exp_id=exp_id,
-                        task_n_robots=n_robots,
                         density=float(density),
                         map_idx=int(map_idx),
+                        n_robots=int(n_robots),
                         map_seed=int(ms),
                         scenario_seed=int(ss),
+                        colors_seed=int(cs),
+                        starts=[list(p) for p in starts],
+                        goals=[list(p) for p in goals],
                     ))
-                    raw_rows.append(res)
 
-                print(f"[{exp_id:03d}] N={n_robots} density={density:.2f} map={map_idx}/10 done")
+                    for algo_name, factory in [
+                        ("A*", lambda: AStarPlanner()),
+                        ("D*Lite", lambda: DStarLitePlanner()),
+                    ]:
+                        res = run_one(algo_name, factory, gm, starts, goals, cs)
+                        res.update(dict(
+                            exp_id=exp_id,
+                            task_n_robots=n_robots,
+                            density=float(density),
+                            map_idx=int(map_idx),
+                            map_seed=int(ms),
+                            scenario_seed=int(ss),
+                        ))
+                        raw_rows.append(res)
 
-    # ---------- save raw ----------
-    raw_path = os.path.join(OUT_DIR, "raw_runs.csv")
-    with open(raw_path, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=list(raw_rows[0].keys()))
-        w.writeheader()
-        w.writerows(raw_rows)
-    print("Saved:", raw_path)
+                    print(f"[{exp_id:03d}] N={n_robots} density={density:.2f} map={map_idx}/10 done")
 
-    # ---------- save summaries ----------
-    task_summary = aggregate_by_task(raw_rows)
-    task_path = os.path.join(OUT_DIR, "summary_by_task.csv")
-    with open(task_path, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=list(task_summary[0].keys()))
-        w.writeheader()
-        w.writerows(task_summary)
-    print("Saved:", task_path)
+    except KeyboardInterrupt:
+        interrupted = True
+        print("\nInterrupted (Ctrl+C). Saving partial results...")
 
-    dens_summary = aggregate_by_density(raw_rows)
-    dens_path = os.path.join(OUT_DIR, "summary_by_density.csv")
-    with open(dens_path, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=list(dens_summary[0].keys()))
-        w.writeheader()
-        w.writerows(dens_summary)
-    print("Saved:", dens_path)
+    finally:
+        # сохраняем ВСЁ, что успели собрать
+        save_all(raw_rows, scenarios, map_cache, sm, interrupted=interrupted)
 
-    # ---------- save scenarios ----------
-    scenarios_path = os.path.join(OUT_DIR, "scenarios.json")
-    with open(scenarios_path, "w", encoding="utf-8") as f:
-        json.dump(
-            dict(
-                meta=dict(
-                    master_seed=int(MASTER_SEED),
-                    map_size=int(MAP_SIZE),
-                    robot_size=int(ROBOT_SIZE),
-                    clearance=int(CLEARANCE),
-                    vision_radius=int(VISION_RADIUS),
-                    max_steps=int(MAX_STEPS),
-                    densities=[float(d) for d in DENSITIES],
-                    task_robot_counts=[int(n) for n in TASK_ROBOT_COUNTS],
-                    n_maps=int(N_MAPS),
-                ),
-                scenarios=scenarios,
-            ),
-            f,
-            ensure_ascii=False,
-            indent=2,
-        )
-    print("Saved:", scenarios_path)
-
-    # ---------- save maps for exact replay ----------
-    # сохраняем 10 карт на плотность (всего 30) как npz
-    maps_dir = os.path.join(OUT_DIR, "maps_npz")
-    os.makedirs(maps_dir, exist_ok=True)
-
-    for density in DENSITIES:
-        for map_idx in range(1, N_MAPS + 1):
-            gm = map_cache[(float(density), int(map_idx))]
-            ms = sm.map_seed(density, map_idx)
-            out_npz = os.path.join(maps_dir, f"map_d{int(round(density*100)):02d}_i{map_idx:02d}_seed{ms}.npz")
-            np.savez_compressed(out_npz, grid=gm.grid.astype(np.uint8), density=float(density), map_idx=int(map_idx), map_seed=int(ms))
-
-    print("Saved maps to:", maps_dir)
-    print("\n✅ Pipeline completed. See results/ folder.")
+        if interrupted:
+            print("✅ Partial results saved.")
+        else:
+            print("✅ Pipeline completed. See results/ folder.")
 
 
 if __name__ == "__main__":

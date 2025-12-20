@@ -18,9 +18,7 @@ def l2_dist(a: Point, b: Point) -> float:
 
 
 class _PQ:
-    """
-    Priority queue с "ленивым" удалением (lazy deletion).
-    """
+
     def __init__(self) -> None:
         self.heap: List[list] = []
         self.entry: Dict[Point, list] = {}
@@ -60,10 +58,7 @@ class _PQ:
 
 @dataclass
 class DStarLitePlanner:
-    """
-    D* Lite — инкрементальный планировщик.
-    Мы обновляем его при изменении occ (например, когда двигаются другие роботы-обstacles).
-    """
+
     _initialized: bool = False
     _occ: np.ndarray | None = None
     _w: int = 0
@@ -100,7 +95,6 @@ class DStarLitePlanner:
         self._s_start = current
         self._km += l2_dist(old_start, current)
 
-        # Находим изменения в среде (в т.ч. динамические obstacles от роботов)
         changes = np.argwhere(occ != self._occ)
         self._occ = occ.copy()
 
@@ -129,7 +123,6 @@ class DStarLitePlanner:
                 yield q
 
     def _cost(self, a: Point, b: Point) -> float:
-        # Стоимость ребра (a->b). Если одна из клеток занята — INF.
         if (not self._free(a)) or (not self._free(b)):
             return INF
         return 1.0

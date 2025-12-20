@@ -107,7 +107,6 @@ def main():
     planner_tag = "DStarLite" if args.planner == "dstar" else "AStar"
     obs_pct = int(round(args.obs_density * 100))
 
-    # base name без .gif
     base = args.gif[:-4] if args.gif.lower().endswith(".gif") else args.gif
 
     gif_name = f"{base}_{planner_tag}_N{args.n_robots}_OBS{obs_pct}_SEED{args.seed}_{timestamp}.gif"
@@ -134,7 +133,6 @@ def main():
     try:
         arena.stop_and_save_gif()
     except RuntimeError as e:
-        # если вдруг кадров нет
         print(f"Could not save GIF: {e}")
 
 

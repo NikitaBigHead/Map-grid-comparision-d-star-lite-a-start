@@ -11,15 +11,14 @@ from arena import Arena
 from robot import Robot
 from planners import AStarPlanner, DStarLitePlanner
 
-from utils import sample_center_unique, center_ok  # твои функции
+from utils import sample_center_unique, center_ok
 
-# ---------------- config ----------------
 OUT_DIR = "results"
 os.makedirs(OUT_DIR, exist_ok=True)
 
 TASK_N_ROBOTS = [1, 2, 4, 8]
 DENSITIES = [0.10, 0.20, 0.25]
-N_MAPS_PER_DENSITY = 10  # => 30 экспериментов на задачу
+N_MAPS_PER_DENSITY = 10
 
 MAP_SIZE = 200
 ROBOT_SIZE = 5
@@ -28,9 +27,8 @@ VISION_RADIUS = 20
 SPEED = 1
 MAX_STEPS = 2000
 
-MASTER_SEED = 3  # общий сид пайплайна
+MASTER_SEED = 3
 
-# ---------------- helpers ----------------
 def compute_path_length(history):
     if len(history) < 2:
         return 0.0
@@ -39,7 +37,6 @@ def compute_path_length(history):
     return float(np.sum(np.hypot(diffs[:, 0], diffs[:, 1])))
 
 def make_map(map_seed: int, density: float):
-    # Важно: MapGenerator использует random, а твой код ещё и np.random
     np.random.seed(map_seed)
     random.seed(map_seed)
 
@@ -48,7 +45,6 @@ def make_map(map_seed: int, density: float):
     return grid
 
 def sample_starts_goals(gm: GridMap, n_robots: int, rng: np.random.Generator):
-    # STARTS: уникальные и не пересекаются
     used_starts = []
     starts = []
     for _ in range(n_robots):
@@ -62,7 +58,6 @@ def sample_starts_goals(gm: GridMap, n_robots: int, rng: np.random.Generator):
         used_starts.append(s)
         starts.append(s)
 
-    # GOALS: уникальные, не на стартах
     used_goals = []
 
     def random_point_near_safe(center, max_dist):
@@ -79,7 +74,6 @@ def sample_starts_goals(gm: GridMap, n_robots: int, rng: np.random.Generator):
                 continue
             return g
 
-        # fallback
         return sample_center_unique(
             gm,
             size=ROBOT_SIZE,
@@ -90,7 +84,6 @@ def sample_starts_goals(gm: GridMap, n_robots: int, rng: np.random.Generator):
 
     goals = []
     for i in range(n_robots):
-        # можно оставить твою логику “к партнёру”
         if i % 2 == 0 and i + 1 < n_robots:
             g = random_point_near_safe(starts[i + 1], 15)
         elif i % 2 == 1:
@@ -113,7 +106,6 @@ def run_one_algorithm(
 ):
     arena = Arena(map=gm)
 
-    # цвета фиксируем (чтобы A* и D* были одинаковыми)
     rng_colors = np.random.default_rng(seed_for_colors)
     colors = [tuple(rng_colors.random(3).tolist()) for _ in range(len(starts))]
 
@@ -145,14 +137,11 @@ def run_one_algorithm(
             history[i].append(r.pos)
     runtime = time.perf_counter() - t0
 
-    # если не дошли до конца
     if steps == 0 and not arena.all_reached():
         steps = MAX_STEPS
 
-    # --- metrics ---
     path_sum = sum(compute_path_length(h) for h in history)
 
-    # visited states: нужна stats в planner (см. часть 2)
     visited_sum = 0
     for r in robots:
         if hasattr(r.planner, "stats") and hasattr(r.planner.stats, "expanded"):
@@ -172,9 +161,7 @@ def run_one_algorithm(
         "deadlock_count": int(deadlock_count),
     }
 
-# ---------------- main pipeline ----------------
 def main():
-    # общий генератор для starts/goals (чтобы воспроизводимо)
     master_rng = np.random.default_rng(MASTER_SEED)
 
     raw_rows = []
@@ -185,19 +172,15 @@ def main():
             for map_idx in range(1, N_MAPS_PER_DENSITY + 1):
                 exp_id += 1
 
-                # задаём seed карты так, чтобы он зависел от (N, density, map_idx)
-                # (можно любое стабильное хеширование)
                 map_seed = int(10_000 * density) * 1000 + n_robots * 100 + map_idx + MASTER_SEED * 999
 
                 grid = make_map(map_seed, density)
                 gm = GridMap(grid)
 
-                # starts/goals для этой карты фиксируем отдельным seed
                 sg_seed = map_seed + 12345
                 sg_rng = np.random.default_rng(sg_seed)
                 starts, goals = sample_starts_goals(gm, n_robots, sg_rng)
 
-                # запускаем оба алгоритма на одинаковом сценарии
                 for algo_name, factory in [
                     ("A*", lambda: AStarPlanner()),
                     ("D*Lite", lambda: DStarLitePlanner()),
@@ -208,7 +191,7 @@ def main():
                         gm=gm,
                         starts=starts,
                         goals=goals,
-                        seed_for_colors=sg_seed,  # одинаковые цвета
+                        seed_for_colors=sg_seed,
                     )
                     res.update({
                         "task_n_robots": n_robots,
@@ -227,7 +210,6 @@ def main():
     df.to_csv(raw_path, index=False)
     print(f"Saved raw runs: {raw_path}")
 
-    # --- агрегаты по задаче и алгоритму ---
     group_cols = ["task_n_robots", "algo"]
     agg = df.groupby(group_cols).agg(
         runs=("exp_id", "count"),

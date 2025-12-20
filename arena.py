@@ -15,9 +15,7 @@ Point = Tuple[int, int]
 
 
 def _square_bounds_from_center(center: Point, size: int) -> tuple[int, int, int, int]:
-    """
-    По центру (cx,cy) и size возвращает bounds: x0,y0,x1,y1 (x1/y1 НЕ включительно)
-    """
+
     cx, cy = center
     hl, hr = _half_extents(size)
     x0 = cx - hl
@@ -28,9 +26,7 @@ def _square_bounds_from_center(center: Point, size: int) -> tuple[int, int, int,
 
 
 def _stamp_square_center(occ: np.ndarray, center: Point, size: int) -> None:
-    """
-    Помечает в occ квадрат size×size вокруг центра как obstacle (обрезая по границам).
-    """
+
     h, w = occ.shape
     x0, y0, x1, y1 = _square_bounds_from_center(center, size)
 
@@ -44,12 +40,7 @@ def _stamp_square_center(occ: np.ndarray, center: Point, size: int) -> None:
 
 
 def _to_cspace_centers(occ: np.ndarray, size: int) -> np.ndarray:
-    """
-    Делает c-space по центрам:
-    center (cx,cy) разрешён, если квадрат size×size вокруг него:
-      - полностью внутри карты
-      - и не пересекает obstacle в occ
-    """
+
     if size <= 1:
         return occ.copy()
 
@@ -58,7 +49,7 @@ def _to_cspace_centers(occ: np.ndarray, size: int) -> np.ndarray:
 
     hl, hr = _half_extents(size)
 
-    out = np.ones((h, w), dtype=np.uint8)  # по умолчанию запрещено
+    out = np.ones((h, w), dtype=np.uint8)
     for cy in range(h):
         y0 = cy - hl
         y1 = cy + hr + 1
@@ -70,7 +61,6 @@ def _to_cspace_centers(occ: np.ndarray, size: int) -> np.ndarray:
             if x0 < 0 or x1 > w:
                 continue
 
-            # сумма obstacles в окне
             s = ps[y1, x1] - ps[y0, x1] - ps[y1, x0] + ps[y0, x0]
             out[cy, cx] = 1 if s > 0 else 0
 
@@ -83,14 +73,12 @@ class Arena:
     robots: List[Robot] = field(default_factory=list)
     t: int = 0
 
-    # --- recording state ---
     _record: bool = field(default=False, init=False)
     _frames: List[Image.Image] = field(default_factory=list, init=False)
     _gif_path: str = field(default="sim.gif", init=False)
     _frame_ms: int = field(default=60, init=False)
     _record_every: int = field(default=1, init=False)
 
-    # renderer cached
     _fig: Optional[object] = field(default=None, init=False)
     _canvas: Optional[object] = field(default=None, init=False)
     _ax: Optional[object] = field(default=None, init=False)
@@ -171,17 +159,15 @@ class Arena:
         ax.set_aspect("equal")
         ax.imshow(grid, cmap="gray_r", vmin=0, vmax=1, interpolation="nearest")
 
-        # цели крестиками, цвет = цвет робота
         goals = np.array([r.goal for r in self.robots], dtype=float) if self.robots else np.zeros((0, 2))
         colors = np.array([r.color_rgb for r in self.robots], dtype=float) if self.robots else np.zeros((0, 3))
         goal_sc = ax.scatter(goals[:, 0], goals[:, 1], marker="x", s=80, c=colors)
 
-        # квадраты роботов
         patches: List[Rectangle] = []
         for r in self.robots:
             x0, y0, x1, y1 = _square_bounds_from_center(r.pos, r.size)
             rect = Rectangle(
-                (x0 - 0.5, y0 - 0.5),  # сдвиг для попадания в клетки
+                (x0 - 0.5, y0 - 0.5),
                 r.size,
                 r.size,
                 facecolor=r.color_rgb,
@@ -205,7 +191,6 @@ class Arena:
         if self._fig is None or self._canvas is None:
             raise RuntimeError("Recording not initialized. Call start_recording() first.")
 
-        # обновляем квадраты роботов
         for rect, r in zip(self._robot_patches, self.robots):
             x0, y0, x1, y1 = _square_bounds_from_center(r.pos, r.size)
             rect.set_xy((x0 - 0.5, y0 - 0.5))

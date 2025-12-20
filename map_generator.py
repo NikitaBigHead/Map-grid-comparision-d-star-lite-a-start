@@ -38,7 +38,7 @@ class MapGenerator:
             current_obstacle_cells += added_cells
 
             if current_obstacle_cells > target_obstacle_cells * 1.5:
-                print("Предупреждение: достигнут предел генерации препятствий")
+                print("Warning: The obstacle generation limit has been reached")
                 break
 
         return self.map
@@ -72,7 +72,7 @@ class MapGenerator:
             width=self.width,
             height=self.height
         )
-        print(f"Карта сохранена в {filename}")
+        print(f"The card is saved in {filename}")
 
     def load_map(self, filename: str) -> np.ndarray:
         data = np.load(filename)
@@ -83,13 +83,13 @@ class MapGenerator:
 
     def visualize(self, title: str = ""):
         if title == "":
-            title = f"Карта препятствий {int(self.density*100)}% (0=свободно, 1=препятствие)"
+            title = f"Obstacle map {int(self.density*100)}% (0=free, 1=obstacle)"
 
         plt.figure(figsize=(10, 10))
         plt.imshow(self.map, cmap='gray_r', vmin=0, vmax=1)
         plt.title(title)
-        plt.xlabel("X координата")
-        plt.ylabel("Y координата")
+        plt.xlabel("X")
+        plt.ylabel("Y")
         plt.show()
 
     def map_to_ascii(
@@ -110,7 +110,7 @@ class MapGenerator:
             x, y = p
             if not (0 <= x < width and 0 <= y < height):
                 raise ValueError(
-                    f"{name} вне карты: {(x, y)} при size=({width}, {height})"
+                    f"{name} outside the map: {(x, y)} at size=({width}, {height})"
                 )
 
         _check_point(start, "start")

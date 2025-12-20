@@ -14,9 +14,7 @@ class Plan:
 
 
 class Planner(Protocol):
-    """
-    Общий интерфейс планировщика.
-    """
+
     def reset(self, start: Point, goal: Point, occ: np.ndarray) -> None: ...
     def update(self, occ: np.ndarray, current: Point) -> None: ...
     def get_plan(self, current: Point) -> Plan: ...

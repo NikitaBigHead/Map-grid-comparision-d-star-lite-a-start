@@ -14,14 +14,8 @@ def _half_extents(size: int) -> tuple[int, int]:
 
 @dataclass
 class GridMap:
-    """
-    Map сущность: хранит статическую occupancy grid (0=free, 1=obstacle).
-    Координаты: (x, y). Индексация в numpy: grid[y, x].
 
-    Дополнительно:
-    - выдаёт случайный ЦЕНТР робота, валидный для size×size и clearance.
-    """
-    grid: np.ndarray  # shape (H, W), dtype uint8
+    grid: np.ndarray
 
     def __post_init__(self) -> None:
         self.grid = self.grid.astype(np.uint8, copy=True)
@@ -46,24 +40,13 @@ class GridMap:
                 yield q
 
     def window_has_obstacle(self, x0: int, y0: int, x1: int, y1: int) -> bool:
-        """
-        Проверяет, есть ли obstacle (==1) в прямоугольнике [x0:x1, y0:y1] (x1,y1 НЕ включительно).
-        Окно должно быть в пределах карты.
-        """
+
         ps = self._ps
         s = ps[y1, x1] - ps[y0, x1] - ps[y1, x0] + ps[y0, x0]
         return s > 0
 
-    # -------------------------
-    # Clearance-aware API
-    # -------------------------
     def center_valid_for_robot_with_clearance(self, center: Point, size: int, clearance: int) -> bool:
-        """
-        Можно ли поставить робота size×size с центром center, с запасом clearance (в клетках)
-        относительно препятствий и границ.
 
-        Проверка эквивалентна проверке квадрата effective_size = size + 2*clearance.
-        """
         if size <= 0 or clearance < 0:
             return False
 
@@ -77,19 +60,15 @@ class GridMap:
         x1 = cx + hr + 1
         y1 = cy + hr + 1
 
-        # квадрат должен целиком влезать в карту
         if x0 < 0 or y0 < 0 or x1 > self.w or y1 > self.h:
             return False
 
-        # и не пересекать препятствия
         return not self.window_has_obstacle(x0, y0, x1, y1)
 
     def random_valid_center_with_clearance(
         self, size: int, clearance: int, rng: np.random.Generator | None = None
     ) -> Point:
-        """
-        Случайный центр, валидный для робота size×size с clearance относительно статических obstacles и границ.
-        """
+
         rng = rng or np.random.default_rng()
 
         if size <= 0 or clearance < 0:

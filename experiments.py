@@ -16,7 +16,6 @@ import numpy as np
 from tqdm import tqdm
 from utils import sample_center_unique, center_ok
 
-# === CONFIG ===
 os.makedirs("results", exist_ok=True)
 rng = np.random.default_rng(52)
 robot_size = 5
@@ -31,7 +30,6 @@ seed = 3
 np.random.seed(seed)
 random.seed(seed)
 
-# === HELPERS ===
 def merge_frames_side_by_side(frames_left, frames_right):
     merged = []
     n = min(len(frames_left), len(frames_right))
@@ -59,7 +57,6 @@ def render_frame(grid, robots, history_list, title=""):
     ax.imshow(grid, cmap="gray_r", origin="upper")
 
     for r, hist in zip(robots, history_list):
-        # --- 1) ПЛАН до цели (полупрозрачный) ---
         if hasattr(r, "last_plan") and r.last_plan is not None and r.last_plan.ok:
             path = r.last_plan.path
             if path is not None and len(path) >= 2:
@@ -74,12 +71,10 @@ def render_frame(grid, robots, history_list, title=""):
                     zorder=2,
                 )
 
-        # --- 2) ПРОЕХАННАЯ ТРАЕКТОРИЯ (непрозрачная) ---
         if len(hist) > 1:
             xs, ys = zip(*hist)
             ax.plot(xs, ys, "-", color=r.color_rgb, linewidth=2.5, alpha=1.0, zorder=3)
 
-        # --- 3) ТЕКУЩАЯ ПОЗИЦИЯ робота ---
         ax.plot(
             r.pos[0], r.pos[1],
             "s",
@@ -90,7 +85,6 @@ def render_frame(grid, robots, history_list, title=""):
             zorder=4,
         )
 
-        # --- 4) GOAL ---
         ax.plot(
             r.goal[0], r.goal[1],
             "x",
@@ -116,8 +110,6 @@ def render_frame(grid, robots, history_list, title=""):
     return img
 
 
-
-# === MAIN LOOP ===
 for exp_idx, N in enumerate(exp_robot_counts, start=1):
     print(f"\n--- Experiment {exp_idx}: {N} robot(s) ---")
 
@@ -126,9 +118,6 @@ for exp_idx, N in enumerate(exp_robot_counts, start=1):
     gm = GridMap(grid)
     
 
-        # =========================
-    # STARTS: уникальные, без пересечений
-    # =========================
     used_starts: list[tuple[int, int]] = []
     starts: list[tuple[int, int]] = []
 
@@ -143,9 +132,6 @@ for exp_idx, N in enumerate(exp_robot_counts, start=1):
         used_starts.append(s)
         starts.append(s)
 
-    # =========================
-    # GOALS: уникальные, не на стартах, рядом с партнёром
-    # =========================
     used_goals: list[tuple[int, int]] = []
 
     def random_point_near_safe(center, max_dist, rng):
@@ -164,7 +150,6 @@ for exp_idx, N in enumerate(exp_robot_counts, start=1):
 
             return g
 
-        # fallback
         return sample_center_unique(
             gm,
             size=robot_size,
@@ -187,11 +172,9 @@ for exp_idx, N in enumerate(exp_robot_counts, start=1):
         goals.append(g)
 
 
-    # Цвета
     colors = [plt.cm.tab10(i) for i in range(N)]
     colors = [c[:3] for c in colors]
 
-    # Роботы
     robots_astar, robots_dstar = [], []
     for i in range(N):
         robots_astar.append(Robot(
@@ -203,7 +186,6 @@ for exp_idx, N in enumerate(exp_robot_counts, start=1):
             planner=DStarLitePlanner(), size=robot_size, color_rgb=colors[i], vision_radius = vision_radius
         ))
 
-    # === A* ===
     arena_astar = Arena(map=gm)
     for r in robots_astar: arena_astar.add_robot(r)
     history_astar = [[r.pos] for r in robots_astar]
@@ -224,7 +206,6 @@ for exp_idx, N in enumerate(exp_robot_counts, start=1):
     if steps_astar == 0 and not arena_astar.all_reached():
         steps_astar = max_steps
 
-    # === D* Lite ===
     arena_dstar = Arena(map=gm)
     for r in robots_dstar: arena_dstar.add_robot(r)
     history_dstar = [[r.pos] for r in robots_dstar]
@@ -244,7 +225,6 @@ for exp_idx, N in enumerate(exp_robot_counts, start=1):
     if steps_dstar == 0 and not arena_dstar.all_reached():
         steps_dstar = max_steps
 
-    # === SAVE ===
     if frames_astar and frames_dstar:
         merged = merge_frames_side_by_side(frames_astar, frames_dstar)
         gif_path = f"results/exp{exp_idx}_comparison.gif"
@@ -270,7 +250,6 @@ for exp_idx, N in enumerate(exp_robot_counts, start=1):
     plt.close(fig)
     print(f"  Saved final image: {png_path}")
 
-    # === METRICS ===
     astar_success = sum(1 for r in robots_astar if r.pos == r.goal)
     dstar_success = sum(1 for r in robots_dstar if r.pos == r.goal)
     astar_path = sum(compute_path_length(h) for h in history_astar)

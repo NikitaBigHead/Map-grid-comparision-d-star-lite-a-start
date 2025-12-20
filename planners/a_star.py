@@ -15,10 +15,7 @@ def l2_dist(a: Point, b: Point) -> float:
 
 @dataclass
 class AStarPlanner:
-    """
-    A* — планирует "с нуля".
-    В Arena/Robot мы заставляем его пересчитываться при столкновении.
-    """
+
     allow_diagonal: bool = False
     _start: Point | None = None
     _goal: Point | None = None
@@ -32,8 +29,6 @@ class AStarPlanner:
         self._path = []
 
     def update(self, occ: np.ndarray, current: Point) -> None:
-        # A* тут не обязан пересчитывать на каждый тик.
-        # Пересчёт мы делаем "по требованию" (например, при коллизии).
         self._occ = occ.copy()
         if self._start is None:
             self._start = current

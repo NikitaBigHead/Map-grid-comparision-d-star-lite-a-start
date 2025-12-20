@@ -1,4 +1,3 @@
-# run_pipeline.py
 from __future__ import annotations
 
 import os
@@ -21,15 +20,12 @@ from planners import AStarPlanner, DStarLitePlanner
 from utils import sample_center_unique, center_ok
 import json
 
-# =========================
-# CONFIG
-# =========================
 OUT_DIR = "results"
 os.makedirs(OUT_DIR, exist_ok=True)
 
 TASK_ROBOT_COUNTS = [1, 2, 2, 4, 8]
 DENSITIES = [0.10, 0.20, 0.25]
-N_MAPS = 10  # 10 карт на плотность => 30 экспериментов на задачу
+N_MAPS = 10
 
 MAP_SIZE = 150
 ROBOT_SIZE = 5
@@ -38,12 +34,8 @@ VISION_RADIUS = 30
 SPEED = 1
 MAX_STEPS = 2000
 
-MASTER_SEED = 3  # общий seed, который задаёт ВСЁ
+MASTER_SEED = 3
 
-
-# =========================
-# RNG isolation for MapGenerator
-# =========================
 @contextmanager
 def temp_seed(py_seed: int, np_seed: int):
     py_state = random.getstate()
@@ -58,22 +50,17 @@ def temp_seed(py_seed: int, np_seed: int):
 
 
 def generate_map(map_seed: int, density: float) -> GridMap:
-    # Важно: если MapGenerator использует random/np.random — фиксируем их только на время генерации
     with temp_seed(py_seed=map_seed, np_seed=map_seed):
         gen = MapGenerator(MAP_SIZE, MAP_SIZE)
         grid = gen.generate_obstacles(density)
     return GridMap(grid)
 
 
-# =========================
-# Scenario (starts/goals)
-# =========================
 def sample_starts_goals(
     gm: GridMap,
     n_robots: int,
     rng: np.random.Generator,
 ) -> Tuple[List[Tuple[int, int]], List[Tuple[int, int]]]:
-    # STARTS: уникальные, без пересечений
     used_starts: List[Tuple[int, int]] = []
     starts: List[Tuple[int, int]] = []
     for _ in range(n_robots):
@@ -87,7 +74,6 @@ def sample_starts_goals(
         used_starts.append(s)
         starts.append(s)
 
-    # GOALS: уникальные, не на стартах, иногда рядом с партнёром
     used_goals: List[Tuple[int, int]] = []
     eff_size = ROBOT_SIZE + 2 * CLEARANCE
 
@@ -106,7 +92,6 @@ def sample_starts_goals(
                 continue
             return g
 
-        # fallback (гарантированно найдёт, или упадёт с ошибкой)
         return sample_center_unique(
             gm,
             size=ROBOT_SIZE,
@@ -130,9 +115,6 @@ def sample_starts_goals(
     return starts, goals
 
 
-# =========================
-# Metrics
-# =========================
 def path_len(points: List[Tuple[int, int]]) -> float:
     if len(points) < 2:
         return 0.0
@@ -151,7 +133,6 @@ def run_one(
 ) -> Dict:
     arena = Arena(map=gm)
 
-    # одинаковые цвета между A* и D* для одного эксперимента
     rngc = np.random.default_rng(colors_seed)
     colors = [tuple(rngc.random(3).tolist()) for _ in range(len(starts))]
 
@@ -185,11 +166,9 @@ def run_one(
     if steps == 0 and not arena.all_reached():
         steps = MAX_STEPS
 
-    # длина пути: считаем среднюю длину на робота (чтобы сравнение N было честным)
     per_robot_paths = [path_len(h) for h in history]
     mean_path_per_robot = float(np.mean(per_robot_paths)) if per_robot_paths else 0.0
 
-    # успех/дедлок по роботам
     success_count = sum(1 for r in robots if r.pos == r.goal)
     deadlock_count = sum(1 for r in robots if getattr(r, "deadlocked", False))
 
@@ -204,9 +183,6 @@ def run_one(
     )
 
 
-# =========================
-# Aggregation
-# =========================
 def mean_std(xs: List[float]) -> Tuple[float, float]:
     if not xs:
         return 0.0, 0.0
@@ -215,11 +191,8 @@ def mean_std(xs: List[float]) -> Tuple[float, float]:
 
 
 def aggregate_by_task(rows: List[Dict]) -> List[Dict]:
-    """
-    task = фиксированный N роботов (30 экспериментов: 10 карт × 3 плотности)
-    """
+
     out = []
-    # группируем по (task_n_robots, algo)
     keys = sorted(set((r["task_n_robots"], r["algo"]) for r in rows))
     for n, algo in keys:
         block = [r for r in rows if r["task_n_robots"] == n and r["algo"] == algo]
@@ -230,7 +203,6 @@ def aggregate_by_task(rows: List[Dict]) -> List[Dict]:
         path_mean, path_std = mean_std(paths)
         time_mean, time_std = mean_std(times)
 
-        # успех/дедлок: считаем по роботам через все эксперименты задачи
         success_sum = sum(r["success_count"] for r in block)
         deadlock_sum = sum(r["deadlock_count"] for r in block)
         robots_total = sum(r["n_robots"] for r in block)
@@ -256,9 +228,7 @@ def aggregate_by_task(rows: List[Dict]) -> List[Dict]:
 
 
 def aggregate_by_density(rows: List[Dict]) -> List[Dict]:
-    """
-    Доп. сводка: по (N, density, algo) — удобно строить графики “качество vs плотность”.
-    """
+
     out = []
     keys = sorted(set((r["task_n_robots"], r["density"], r["algo"]) for r in rows))
     for n, d, algo in keys:
@@ -321,12 +291,10 @@ def save_all(
 
     suffix = "_partial" if interrupted else ""
 
-    # 1) raw
     raw_path = os.path.join(OUT_DIR, f"raw_runs{suffix}.csv")
     _atomic_write_csv(raw_path, raw_rows)
     print("Saved:", raw_path)
 
-    # 2) summaries (если хоть что-то есть)
     if raw_rows:
         task_summary = aggregate_by_task(raw_rows)
         task_path = os.path.join(OUT_DIR, f"summary_by_task{suffix}.csv")
@@ -338,7 +306,6 @@ def save_all(
         _atomic_write_csv(dens_path, dens_summary)
         print("Saved:", dens_path)
 
-    # 3) scenarios
     scenarios_path = os.path.join(OUT_DIR, f"scenarios{suffix}.json")
     payload = dict(
         meta=dict(
@@ -352,14 +319,13 @@ def save_all(
             task_robot_counts=[int(n) for n in TASK_ROBOT_COUNTS],
             n_maps=int(N_MAPS),
             interrupted=bool(interrupted),
-            runs_completed=int(len(raw_rows) // 2),  # 2 алгоритма на exp
+            runs_completed=int(len(raw_rows) // 2),
         ),
         scenarios=scenarios,
     )
     _atomic_write_text(scenarios_path, json.dumps(payload, ensure_ascii=False, indent=2))
     print("Saved:", scenarios_path)
 
-    # 4) maps (только те, что реально есть в кэше)
     maps_dir = os.path.join(OUT_DIR, f"maps_npz{suffix}")
     os.makedirs(maps_dir, exist_ok=True)
 
@@ -380,9 +346,6 @@ def save_all(
     print("Saved maps to:", maps_dir)
 
 
-# =========================
-# Main
-# =========================
 def main():
     sm = SeedManager(MASTER_SEED)
     raw_rows: List[Dict] = []
@@ -398,7 +361,6 @@ def main():
                 for map_idx in range(1, N_MAPS + 1):
                     exp_id += 1
 
-                    # 1) карта — одинаковая между задачами
                     key = (float(density), int(map_idx))
                     if key not in map_cache:
                         ms = sm.map_seed(density, map_idx)
@@ -408,12 +370,10 @@ def main():
                         gm = map_cache[key]
                         ms = sm.map_seed(density, map_idx)
 
-                    # 2) сценарий
                     ss = sm.scenario_seed(density, map_idx, n_robots)
                     rng = np.random.default_rng(ss)
                     starts, goals = sample_starts_goals(gm, n_robots, rng)
 
-                    # 3) цвета
                     cs = sm.colors_seed(density, map_idx, n_robots)
 
                     scenarios.append(dict(
@@ -450,7 +410,6 @@ def main():
         print("\nInterrupted (Ctrl+C). Saving partial results...")
 
     finally:
-        # сохраняем ВСЁ, что успели собрать
         save_all(raw_rows, scenarios, map_cache, sm, interrupted=interrupted)
 
         if interrupted:
